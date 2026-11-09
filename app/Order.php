@@ -6,8 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
-    protected $fillable = ['customer_id', 'user_id', 'tgl_order', 'tgl_kirim', 'status', 'metode_bayar', 'total'];
-    protected $casts = ['tgl_order' => 'date', 'tgl_kirim' => 'date'];
+    protected $fillable = ['customer_id', 'user_id', 'tgl_order', 'tgl_kirim', 'status', 'metode_bayar', 'tgl_jatuh_tempo', 'total'];
+    protected $casts = [
+        'tgl_order' => 'date',
+        'tgl_kirim' => 'date',
+        'tgl_jatuh_tempo' => 'date' // Tambahkan ini
+    ];
 
     public function customer()
     {

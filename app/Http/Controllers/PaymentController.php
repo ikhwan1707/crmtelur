@@ -10,13 +10,30 @@ class PaymentController extends Controller
 {
     public function store(Request $request, Order $order)
     {
-        $data = $request->validate([
+        // 1. Validasi dasar
+        $request->validate([
             'tgl_bayar' => 'required|date',
-            'jumlah' => 'required|numeric|min:0.01',
+            'jumlah' => 'required|numeric|min:1',
             'keterangan' => 'nullable|string|max:255',
         ]);
-        $order->payments()->create($data);
-        return back()->with('success', 'Pembayaran ditambahkan.');
+
+        // 2. Cek apakah nominal melebihi sisa piutang
+        $sisa = $order->sisaPiutang();
+
+        if ($request->jumlah > $sisa) {
+            return back()->withErrors([
+                'jumlah' => 'Gagal! Nominal pembayaran (Rp ' . number_format($request->jumlah, 0, ',', '.') . ') melebihi sisa piutang (Rp ' . number_format($sisa, 0, ',', '.') . ').'
+            ])->withInput();
+        }
+
+        // 3. Simpan pembayaran
+        $order->payments()->create([
+            'tgl_bayar' => $request->tgl_bayar,
+            'jumlah' => $request->jumlah,
+            'keterangan' => $request->keterangan,
+        ]);
+
+        return back()->with('success', 'Pembayaran berhasil ditambahkan.');
     }
     public function destroy(Payment $payment)
     {

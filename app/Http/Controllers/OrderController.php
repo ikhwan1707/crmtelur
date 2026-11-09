@@ -12,7 +12,7 @@ class OrderController extends Controller
 {
     public function index()
     {
-        $orders = Order::with('customer')->latest()->paginate(10);
+        $orders = Order::with(['customer','payments'])->latest()->paginate(10);
         return view('orders.index', compact('orders'));
     }
     public function create()
@@ -30,17 +30,32 @@ class OrderController extends Controller
             'tgl_kirim' => 'nullable|date',
             'status' => 'required|in:diproses,dikirim,selesai,batal',
             'metode_bayar' => 'required|in:tunai,tempo',
+            'tgl_jatuh_tempo' => 'nullable|date|after_or_equal:tgl_order',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.jumlah' => 'required|numeric|min:0.01',
-            'items.*.harga_satuan' => 'required|numeric|min:0',
+            'items.*.jumlah' => 'required|numeric|min:1',
         ]);
 
         $order = DB::transaction(function () use ($data, $request) {
             $total = 0;
+
+            $itemsData = [];
+            
             foreach ($request->items as $it) {
-                $total += $it['jumlah'] * $it['harga_satuan'];
+                $product = \App\Product::findOrFail($it['product_id']);
+                $hargaAsli = $product->harga;
+
+                $subtotal = $it['jumlah'] * $hargaAsli;
+                $total += $subtotal;
+
+                $itemsData[] = [
+                    'product_id' => $it['product_id'],
+                    'jumlah' => $it['jumlah'],
+                    'harga_satuan' => $hargaAsli, // Gunakan harga dari database
+                    'subtotal' => $subtotal,
+                ];
             }
+
             $order = Order::create([
                 'customer_id' => $data['customer_id'],
                 'user_id' => auth()->id(),
@@ -48,16 +63,13 @@ class OrderController extends Controller
                 'tgl_kirim' => $data['tgl_kirim'] ?? null,
                 'status' => $data['status'],
                 'metode_bayar' => $data['metode_bayar'],
+                'tgl_jatuh_tempo' => $data['tgl_jatuh_tempo'] ?? null,
                 'total' => $total,
             ]);
-            foreach ($request->items as $it) {
-                $order->items()->create([
-                    'product_id' => $it['product_id'],
-                    'jumlah' => $it['jumlah'],
-                    'harga_satuan' => $it['harga_satuan'],
-                    'subtotal' => $it['jumlah'] * $it['harga_satuan'],
-                ]);
-            }
+
+            // Simpan Item Pesanan
+            $order->items()->createMany($itemsData);
+
             return $order;
         });
 
@@ -83,7 +95,13 @@ class OrderController extends Controller
             'status' => 'required|in:diproses,dikirim,selesai,batal',
             'metode_bayar' => 'required|in:tunai,tempo',
             'tgl_kirim' => 'nullable|date',
+            'tgl_jatuh_tempo' => 'nullable|date|after_or_equal:' . $order->tgl_order->format('Y-m-d'),
         ]);
+
+        if ($data['metode_bayar'] === 'tunai') {
+            $data['tgl_jatuh_tempo'] = null;
+        }
+        
         $order->update($data);
         app(RepeatOrderService::class)->recalculateForOrder($order);
         return redirect()->route('orders.show', $order)->with('success', 'Pesanan diperbarui.');
